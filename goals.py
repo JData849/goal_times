@@ -56,30 +56,43 @@ with st.sidebar:
     # Show human display + internal conversion examples
     from_dt_obj = pd.to_datetime(pd.Timestamp.combine(from_date, from_time)).to_pydatetime()
     to_dt_obj = pd.to_datetime(pd.Timestamp.combine(to_date, to_time)).to_pydatetime()
-    st.caption(
-        f"Selected: **{from_dt_obj.strftime('%d/%m/%Y %H:%M')}** → internal **{from_dt_obj.strftime('%Y/%m/%d %H:%M:%S')}**\n"
-        f"Selected: **{to_dt_obj.strftime('%d/%m/%Y %H:%M')}** → internal **{to_dt_obj.strftime('%Y/%m/%d %H:%M:%S')}**"
+    st.caption(f"Selected: **{from_dt_obj.strftime('%d/%m/%Y %H:%M')}** → internal **{from_dt_obj.strftime('%Y/%m/%d %H:%M:%S')}**"
+               f"\nSelected: **{to_dt_obj.strftime('%d/%m/%Y %H:%M')}** → internal **{to_dt_obj.strftime('%Y/%m/%d %H:%M:%S')}**"
     )
 
-    window = st.number_input(
-        "Confirmation window (event ID span)",
-        min_value=1,
-        max_value=200,
-        value=CONFIRM_WINDOW_DEFAULT,
-        step=1
-    )
+    window = st.number_input("Confirmation window (event ID span)", min_value=1, max_value=200, value=CONFIRM_WINDOW_DEFAULT, step=1)
 
     st.divider()
     st.subheader("Authentication")
+    st.write("Paste the full **Cookie** header value for connect.sportingsolutions.com.")
 
-    # ✅ Load cookie securely from Streamlit secrets
-    cookie = st.secrets["auth"]["cookie"]
+    # Load cookie from env/session/dotenv
+    def load_cookie_from_env() -> str:
+        env_cookie = os.getenv("SS_COOKIE", "").strip()
+        if env_cookie:
+            return env_cookie
+        if "cookie_value" in st.session_state and st.session_state.cookie_value:
+            return st.session_state.cookie_value
+        if os.path.exists(DOTENV_PATH):
+            try:
+                text = open(DOTENV_PATH, "r", encoding="utf-8").read().strip()
+                data = json.loads(text)
+                return data.get("cookie", "")
+            except Exception:
+                return ""
+        return ""
 
-    # Optionally show a confirmation to user (but don’t reveal the cookie!)
-    st.success("Cookie loaded from Streamlit secrets ✅")
+    def save_cookie_to_env(cookie_value: str) -> None:
+        try:
+            with open(DOTENV_PATH, "w", encoding="utf-8") as f:
+                json.dump({"cookie": cookie_value}, f)
+        except Exception as e:
+            st.warning(f"Could not save cookie locally: {e}")
+
+    cookie_input = st.text_input("Cookie", value=load_cookie_from_env(), type="password")
+    remember_locally = st.checkbox("Remember cookie locally (.env_ss_cookie)", value=False)
 
     run_btn = st.button("Run")
-
 
 # -------------------- HTTP helpers --------------------
 
@@ -318,13 +331,17 @@ def build_xlsx_bytes(df: pd.DataFrame) -> bytes:
 # -------------------- Run button logic --------------------
 
 if run_btn:
-    cookie = st.secrets["auth"]["cookie"].strip()
-    if not cookie:
-        st.error("Cookie is missing. Please add it in Streamlit secrets.")
+    if not cookie_input.strip():
+        st.error("Cookie is required. Paste the 'Cookie' header value.")
         st.stop()
 
-    session = make_session(cookie)
-    fixtures = fetch_fixtures(from_dt_obj, to_dt_obj)
+    # Save to session (and optionally to local file)
+    st.session_state.cookie_value = cookie_input.strip()
+    if remember_locally:
+        save_cookie_to_env(st.session_state.cookie_value)
+        st.success(f"Saved cookie to {DOTENV_PATH} (keep this file private).")
+
+    session = make_session(st.session_state.cookie_value)
 
     with st.status("Fetching fixtures…", expanded=True) as status:
         fixtures = fetch_fixtures(from_dt_obj, to_dt_obj)
