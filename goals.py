@@ -318,17 +318,13 @@ def build_xlsx_bytes(df: pd.DataFrame) -> bytes:
 # -------------------- Run button logic --------------------
 
 if run_btn:
-    if not cookie_input.strip():
-        st.error("Cookie is required. Paste the 'Cookie' header value.")
+    cookie = st.secrets["auth"]["cookie"].strip()
+    if not cookie:
+        st.error("Cookie is missing. Please add it in Streamlit secrets.")
         st.stop()
 
-    # Save to session (and optionally to local file)
-    st.session_state.cookie_value = cookie_input.strip()
-    if remember_locally:
-        save_cookie_to_env(st.session_state.cookie_value)
-        st.success(f"Saved cookie to {DOTENV_PATH} (keep this file private).")
-
-    session = make_session(st.session_state.cookie_value)
+    session = make_session(cookie)
+    fixtures = fetch_fixtures(from_dt_obj, to_dt_obj)
 
     with st.status("Fetching fixtures…", expanded=True) as status:
         fixtures = fetch_fixtures(from_dt_obj, to_dt_obj)
